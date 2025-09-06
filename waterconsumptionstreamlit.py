@@ -3,173 +3,199 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.linear_model import LinearRegression
+import time
 from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score, mean_squared_error
 from datetime import datetime
 import random
-import time
 
-# Page setup
-st.set_page_config(page_title="Water Consumption Dashboard", page_icon="💧", layout="wide")
-st.markdown("<h1 style='text-align:center;color:#1976d2;'>Water Consumption Analysis & Monitoring Dashboard</h1>", unsafe_allow_html=True)
+# --- Joypy: import if available ---
+try:
+    import joypy
+    joypy_imported = True
+except ImportError:
+    joypy_imported = False
 
-st.sidebar.header("Dashboard Controls")
-uploaded_file = st.sidebar.file_uploader("Upload water consumption CSV", type=['csv'])
-seed_val = st.sidebar.number_input("Seed value (for simulation)", min_value=0, value=42)
-monitor_active = st.sidebar.checkbox("Activate real-time monitoring simulation")
+#### OCEAN THEME SETUP ####
+st.set_page_config(page_title="Water Consumption Dashboard", layout="wide")
+st.markdown("""
+    <style>
+        .stApp {
+            background-image: url('https://i.pinimg.com/originals/d0/44/36/d04436335c516adf0ec8cd1e5093b1db.gif');
+            background-size: cover;
+        }
+        .block-container {
+            background: rgba(0, 90, 133, 0.92);
+            border-radius: 18px !important;
+            padding: 2rem !important;
+            margin-bottom: 2rem;
+        }
+        h1, h2, h3, h4 {
+            color: #e0f7fa !important;
+        }
+        .metric-label, .metric-value {
+            color: #004d57 !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
+sns.set_theme(style="whitegrid")
+sns.set_palette("ocean")
 
-@st.cache_data
-def load_data(file):
-    df = pd.read_csv(file)
-    df = df.dropna()
-    df['date'] = pd.to_datetime(df['date'])
-    return df
+st.title("🌊 Water Consumption Dashboard")
 
-if uploaded_file:
-    df = load_data(uploaded_file)
+st.sidebar.title("Upload Data 🌊")
+uploaded_file = st.sidebar.file_uploader("Upload CSV", type="csv")
+
+#---- MAIN DASHBOARD LOGIC ----#
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
+    orig_shape = df.shape
+    # Robust date + month parse
+    if 'date' in df.columns:
+        try:
+            df['date'] = pd.to_datetime(df['date'])
+            df['month'] = df['date'].dt.month
+        except Exception as e:
+            st.warning("Could not parse 'date': " + str(e))
+            df['month'] = 1
+    else:
+        st.warning("Column 'date' not found.")
+        df['month'] = 1
+
+    if 'region' not in df.columns or 'consumption_liters' not in df.columns:
+        st.error("Your CSV must have columns named 'region' and 'consumption_liters'.")
+    else:
+        df_cleaned = df.dropna(subset=['region', 'consumption_liters']).copy()
+        rows_removed = orig_shape[0] - df_cleaned.shape[0]
+        st.markdown('<div class="block-container">', unsafe_allow_html=True)
+        # Fun summary
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Data Points 🌊", df_cleaned.shape[0])
+        col2.metric("Unique Regions 📍", df_cleaned['region'].nunique())
+        col3.metric("Rows Cleaned 🧼", rows_removed)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="block-container">', unsafe_allow_html=True)
+        # Ridgeline plot
+        st.subheader("🪼 Consumption by Month")
+        if joypy_imported:
+            fig, ax = joypy.joyplot(df_cleaned, by="month", column="consumption_liters",
+                                    colormap=plt.cm.Blues, fade=True, figsize=(12,8))
+            plt.xlabel("Consumption (Liters)")
+            st.pyplot(fig)
+        else:
+            st.warning("joypy not installed - run 'pip install joypy' for ridgeline plots.")
+
+        # Violin plot by region
+        st.subheader("🐟 Distribution by Region")
+        fig, ax = plt.subplots(figsize=(10,6))
+        sns.violinplot(x="region", y="consumption_liters", data=df_cleaned, ax=ax, inner="quartile", color="#00bcd4")
+        plt.xticks(rotation=45)
+        st.pyplot(fig)
+
+        # Overlapping density per region
+        st.subheader("🌊 Density Plots by Region")
+        fig, ax = plt.subplots(figsize=(12,6))
+        for region in df_cleaned['region'].unique():
+            sns.kdeplot(df_cleaned[df_cleaned['region'] == region]['consumption_liters'],
+                        ax=ax, fill=True, alpha=0.3, label=region)
+        plt.xlabel("Consumption (Liters)")
+        plt.legend()
+        st.pyplot(fig)
+
+        # Box plot by region
+        st.subheader("📦 Consumption in Litres by Region")
+        fig, ax = plt.subplots(figsize=(10,6))
+        sns.boxplot(x='region', y='consumption_liters', data=df_cleaned, ax=ax, palette="ocean")
+        plt.xticks(rotation=45)
+        st.pyplot(fig)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        #--------- REGRESSION / PREDICTION SECTION ----------#
+        st.markdown('<div class="block-container">', unsafe_allow_html=True)
+        st.header("🤖 Regression & Prediction")
+        df_model = df_cleaned.copy()
+        # Date feature
+        df_model['date_ordinal'] = df_model['date'].map(pd.Timestamp.toordinal)
+        # One-hot encode region
+        df_model = pd.get_dummies(df_model, columns=['region'], drop_first=True)
+        X = df_model.drop(columns=['date', 'consumption_liters'])
+        y = df_model['consumption_liters']
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        lr_model = LinearRegression()
+        lr_model.fit(X_train, y_train)
+        y_pred = lr_model.predict(X_test)
+        r2 = r2_score(y_test, y_pred)
+        mse = mean_squared_error(y_test, y_pred)
+        st.write(f'**R² Score:** {r2:.3f}')
+        st.write(f'**Mean Squared Error:** {mse:.2f}')
+        fig5, ax5 = plt.subplots(figsize=(6,6))
+        ax5.scatter(y_test, y_pred, alpha=0.6, color='#0097A7')
+        ax5.plot([y.min(), y.max()], [y.min(), y.max()], 'k--', lw=2)
+        plt.xlabel('Actual Consumption (Liters)')
+        plt.ylabel('Predicted Consumption (Liters)')
+        plt.title('Actual vs Predicted Consumption')
+        st.pyplot(fig5)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        #-------- CONTINUOUS ANOMALY MONITORING ----------#
+        st.markdown('<div class="block-container">', unsafe_allow_html=True)
+        st.header("🌊 Continuous Anomaly Monitoring")
+
+        def generate_dummy_data(seed=None):
+            if seed:
+                np.random.seed(seed)
+            current_time = datetime.now()
+            data = {
+                'timestamp': current_time,
+                'consumption': np.random.normal(100, 15),
+                'temperature': np.random.normal(22, 5),
+                'day_of_week': current_time.weekday(),
+                'hour_of_day': current_time.hour
+            }
+            actual_anomaly = False
+            if np.random.random() < 0.05:
+                anomaly_factor = random.choice([0.2, 5.0])
+                data['consumption'] *= anomaly_factor
+                actual_anomaly = True
+            return pd.DataFrame([data]), actual_anomaly
+
+        def predict_anomaly(data):
+            consumption = data['consumption'].values[0]
+            return 1 if consumption < 30 or consumption > 200 else 0
+
+        tab1, tab2 = st.tabs(["Monitor", "How It Works"])
+        with tab1:
+            st.write("### 🌊 Simulated Real-Time Anomaly Detection")
+            interval = st.slider("Refresh interval (seconds)", min_value=1, max_value=10, value=2)
+            seed = st.number_input("Random Seed", min_value=0, max_value=100, value=4)
+            dummy_run = st.button("Run Simulation")
+            if dummy_run:
+                for i in range(10):
+                    new_data, actual_anomaly = generate_dummy_data(seed)
+                    prediction = predict_anomaly(new_data)
+                    st.write(f"**Timestamp:** {new_data['timestamp'].values[0]}")
+                    st.write(f"**Water Consumption:** {new_data['consumption'].values[0]:.2f} units")
+                    st.write(f"**Prediction:** {'🌊 ANOMALY DETECTED!' if prediction == 1 else 'Normal consumption'}")
+                    if actual_anomaly and prediction == 1:
+                        st.success("✓ True Positive: Correctly identified anomaly")
+                    elif not actual_anomaly and prediction == 0:
+                        st.info("✓ True Negative: Correctly identified normal consumption")
+                    elif actual_anomaly and prediction == 0:
+                        st.error("✗ False Negative: Missed anomaly")
+                    else:
+                        st.warning("✗ False Positive: False alarm")
+                    time.sleep(interval)
+        with tab2:
+            st.write("""
+                _This tab simulates continuous water consumption monitoring, 
+                generating dummy data with occasional anomalies and evaluating prediction accuracy. 
+                The anomaly logic is threshold-based for demonstration; 
+                integrate your model for production scenarios._
+            """)
+        st.markdown('</div>', unsafe_allow_html=True)
+
 else:
-    st.info("Upload a water consumption CSV to begin. Using example data.")
-    regions = ['North', 'East', 'South', 'West']
-    dates = pd.date_range('2023-01-01', periods=900)
-    df = pd.DataFrame({
-        'region': np.random.choice(regions, len(dates)),
-        'date': dates,
-        'consumption_liters': np.random.normal(14000, 3500, len(dates))
-    })
-    df['date'] = pd.to_datetime(df['date'])
+    st.info("Please upload your water consumption data (CSV) to get started 💧")
 
-# Region selection
-region_options = list(df['region'].unique())
-selected_regions = st.sidebar.multiselect("Select regions for visualization", region_options, default=region_options)
-df = df[df['region'].isin(selected_regions)]
-
-# Date range filter
-start_date = st.sidebar.date_input("Start Date", value=df['date'].min())
-end_date = st.sidebar.date_input("End Date", value=df['date'].max())
-df = df[(df['date'] >= pd.to_datetime(start_date)) & (df['date'] <= pd.to_datetime(end_date))]
-
-st.subheader("Cleaned Data Preview")
-st.dataframe(df.head())
-
-# Stats cards
-col1, col2, col3 = st.columns(3)
-col1.metric("Total Rows", len(df))
-col2.metric("Average Consumption (L)", f"{df['consumption_liters'].mean():.2f}")
-col3.metric("Date Range", f"{df['date'].min().date()} — {df['date'].max().date()}")
-
-# Boxplot by region
-st.markdown("### Consumption Distribution by Region")
-fig, ax = plt.subplots(figsize=(10,6))
-sns.boxplot(x='region', y='consumption_liters', data=df, ax=ax)
-ax.set_title('Boxplot of Consumption by Region')
-st.pyplot(fig)
-
-# Consumption over time by region
-st.markdown("### Time Series: Consumption Over Time (per region)")
-for region in selected_regions:
-    region_data = df[df['region'] == region]
-    ts = region_data.groupby('date')['consumption_liters'].sum().reset_index()
-    fig, ax = plt.subplots(figsize=(11,4))
-    ax.plot(ts['date'], ts['consumption_liters'])
-    ax.set_title(f'Region: {region} - Daily Consumption')
-    ax.set_xlabel('Date'); ax.set_ylabel('Total Consumption (L)'); ax.grid(alpha=0.4)
-    st.pyplot(fig)
-
-# Avg consumption comparison
-st.markdown("### Average Consumption Comparison (Bar & Line)")
-region_avg = df.groupby('region')['consumption_liters'].mean().reset_index().sort_values('consumption_liters',ascending=False)
-fig, ax = plt.subplots(figsize=(10,6))
-sns.barplot(x='region', y='consumption_liters', data=region_avg, alpha=0.7, ax=ax)
-ax2 = ax.twinx()
-ax2.plot(region_avg['region'], region_avg['consumption_liters'], marker='o', color='red')
-ax2.set_ylabel('Avg Consumption (Line)', color='red'); ax2.tick_params(axis='y', colors='red')
-plt.tight_layout()
-st.pyplot(fig)
-
-# Monthly patterns
-df['month'] = df['date'].dt.month
-monthly = df.groupby(['region','month'])['consumption_liters'].mean().reset_index()
-st.markdown("### Average Monthly Consumption (per region)")
-for region in selected_regions:
-    fig, ax = plt.subplots(figsize=(9,4))
-    m = monthly[monthly['region']==region]
-    sns.lineplot(x='month', y='consumption_liters', data=m, marker='o', ax=ax)
-    ax.set_title(f'Average Monthly Consumption: {region}')
-    ax.grid(alpha=0.45); ax.set_xticks(range(1,13))
-    st.pyplot(fig)
-
-# Monthly fluctuations normalized
-st.markdown("### Monthly Consumption Fluctuations (Normalized Across Regions)")
-fig, ax = plt.subplots(figsize=(11,7))
-for region in selected_regions:
-    rm = monthly[monthly['region']==region]
-    norm = rm['consumption_liters']/rm['consumption_liters'].mean()
-    ax.plot(rm['month'], norm, marker='o', label=region)
-ax.set_title('Monthly Fluctuations by Region (Normalized)')
-ax.set_xlabel('Month')
-ax.set_ylabel('Normalized Consumption')
-ax.set_xticks(range(1,13))
-ax.grid(alpha=0.5)
-ax.legend()
-st.pyplot(fig)
-
-# Consumption distribution
-st.markdown("### Consumption Distribution by Region (Histogram)")
-n = len(selected_regions)
-fig, axs = plt.subplots(1, n, figsize=(15, 5))
-if n == 1: axs = [axs]
-for i, region in enumerate(selected_regions):
-    sns.histplot(df[df['region']==region]['consumption_liters'], kde=True, ax=axs[i])
-    axs[i].set_title(f'{region} Distribution')
-    axs[i].set_xlabel('Consumption (L)')
-plt.tight_layout()
-st.pyplot(fig)
-
-# Model: Predict consumption
-st.markdown("### Simple Linear Regression Forecast")
-df_model = df.copy()
-df_model['date_ordinal'] = df_model['date'].map(pd.Timestamp.toordinal)
-df_model = pd.get_dummies(df_model, columns=['region'], drop_first=True)
-X = df_model.drop(columns=['date', 'consumption_liters','month'])
-y = df_model['consumption_liters']
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-lr_model = LinearRegression().fit(X_train, y_train)
-y_pred = lr_model.predict(X_test)
-r2 = r2_score(y_test, y_pred)
-mse = mean_squared_error(y_test, y_pred)
-st.write(f"**R² Score:** {r2:.3f}  |  **MSE:** {mse:.2f}")
-
-fig, ax = plt.subplots(figsize=(7,5))
-ax.scatter(y_test, y_pred, c='turquoise', alpha=0.6)
-lims = [min(y.min(),y_pred.min()), max(y.max(),y_pred.max())]
-ax.plot(lims, lims, 'k--', lw=2)
-ax.set_xlabel('Actual Consumption (L)')
-ax.set_ylabel('Predicted Consumption (L)')
-ax.set_title('Actual vs Predicted')
-plt.tight_layout()
-st.pyplot(fig)
-
-# Real-time simulation (optional)
-if monitor_active:
-    st.markdown("### Real-Time Water Consumption Monitoring Simulation")
-    sim_placeholder = st.empty()
-    for i in range(12):
-        now = datetime.now()
-        consumption = np.random.normal(100, 15)
-        temp = np.random.normal(22, 5)
-        data = {'timestamp': now, 'consumption': consumption, 'temperature': temp,
-                'day_of_week': now.weekday(), 'hour_of_day': now.hour}
-        anomaly = 1 if consumption < 30 or consumption > 200 else 0
-        status = "ANOMALY DETECTED!" if anomaly else "Normal consumption"
-        sim_placeholder.markdown(f"""
-        **Time:** {data['timestamp']}  
-        **Consumption:** {data['consumption']:.2f} units  
-        **Status:** {status}  
-        """)
-        time.sleep(2)
-    st.success("Simulation complete.")
-
-# Show raw data
-if st.checkbox("Show raw data table"):
-    st.dataframe(df)

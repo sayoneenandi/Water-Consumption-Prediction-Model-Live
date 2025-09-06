@@ -198,33 +198,33 @@ if uploaded_file is not None:
         #     """)
         # st.markdown('</div>', unsafe_allow_html=True)
         # --- LIVE "NEW DATA" PREDICTION FORM ---
-st.markdown('<div class="block-container">', unsafe_allow_html=True)
-st.header("💧 Live Water Consumption Prediction")
-
-with st.form("live_predict"):
-    st.markdown("Enter new observation details below:")
-    region = st.selectbox("Region", sorted(df_cleaned['region'].unique()))
-    date = st.date_input("Date")
-    # If you use other features (e.g., temperature), add more widgets here
-    submit = st.form_submit_button("Predict")
-
-if submit:
-    input_df = pd.DataFrame([{
-        "region": region,
-        "date": date,
-        # Add your other fields here
-    }])
-    input_df['date'] = pd.to_datetime(input_df['date'])
-    input_df['date_ordinal'] = input_df['date'].map(pd.Timestamp.toordinal)
-    input_df = pd.get_dummies(input_df, columns=['region'])
-    # Ensure all train columns are present
-    for col in X.columns:
-        if col not in input_df.columns:
-            input_df[col] = 0
-    input_df = input_df[X.columns]  # correct order
-    y_pred_live = lr_model.predict(input_df)[0]
-    st.success(f"Predicted water consumption: {y_pred_live:.2f} liters")
-st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="block-container">', unsafe_allow_html=True)
+        st.header("💧 Live Water Consumption Prediction")
+        
+        with st.form("live_predict"):
+            st.markdown("Enter new observation details below:")
+            region = st.selectbox("Region", sorted(df_cleaned['region'].unique()))
+            date = st.date_input("Date")
+            # If you use other features (e.g., temperature), add more widgets here
+            submit = st.form_submit_button("Predict")
+        
+        if submit:
+            input_df = pd.DataFrame([{
+                "region": region,
+                "date": date,
+                # Add your other fields here
+            }])
+            input_df['date'] = pd.to_datetime(input_df['date'])
+            input_df['date_ordinal'] = input_df['date'].map(pd.Timestamp.toordinal)
+            input_df = pd.get_dummies(input_df, columns=['region'])
+            # Ensure all train columns are present
+            for col in X.columns:
+                if col not in input_df.columns:
+                    input_df[col] = 0
+            input_df = input_df[X.columns]  # correct order
+            y_pred_live = lr_model.predict(input_df)[0]
+            st.success(f"Predicted water consumption: {y_pred_live:.2f} liters")
+        st.markdown('</div>', unsafe_allow_html=True)
 
 
 else:

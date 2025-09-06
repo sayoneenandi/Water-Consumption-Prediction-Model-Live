@@ -1,3 +1,5 @@
+# Place as the first thing in your Streamlit script
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -9,7 +11,14 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score, mean_squared_error
 from datetime import datetime
 import random
-
+st.markdown(
+    """
+    <div style="display: flex; justify-content: center;">
+        <img src="https://i.pinimg.com/originals/d0/44/36/d04436335c516adf0ec8cd1e5093b1db.gif" alt="Banner" style="max-width: 100%; border-radius:15px;" />
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 # --- Joypy: import if available ---
 try:
     import joypy

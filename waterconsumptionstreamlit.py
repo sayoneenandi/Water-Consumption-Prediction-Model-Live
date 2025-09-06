@@ -141,62 +141,91 @@ if uploaded_file is not None:
         st.pyplot(fig5)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        #-------- CONTINUOUS ANOMALY MONITORING ----------#
-        st.markdown('<div class="block-container">', unsafe_allow_html=True)
-        st.header("🌊 Continuous Anomaly Monitoring")
+        # #-------- CONTINUOUS ANOMALY MONITORING ----------#
+        # st.markdown('<div class="block-container">', unsafe_allow_html=True)
+        # st.header("🌊 Continuous Anomaly Monitoring")
 
-        def generate_dummy_data(seed=None):
-            if seed:
-                np.random.seed(seed)
-            current_time = datetime.now()
-            data = {
-                'timestamp': current_time,
-                'consumption': np.random.normal(100, 15),
-                'temperature': np.random.normal(22, 5),
-                'day_of_week': current_time.weekday(),
-                'hour_of_day': current_time.hour
-            }
-            actual_anomaly = False
-            if np.random.random() < 0.05:
-                anomaly_factor = random.choice([0.2, 5.0])
-                data['consumption'] *= anomaly_factor
-                actual_anomaly = True
-            return pd.DataFrame([data]), actual_anomaly
+        # def generate_dummy_data(seed=None):
+        #     if seed:
+        #         np.random.seed(seed)
+        #     current_time = datetime.now()
+        #     data = {
+        #         'timestamp': current_time,
+        #         'consumption': np.random.normal(100, 15),
+        #         'temperature': np.random.normal(22, 5),
+        #         'day_of_week': current_time.weekday(),
+        #         'hour_of_day': current_time.hour
+        #     }
+        #     actual_anomaly = False
+        #     if np.random.random() < 0.05:
+        #         anomaly_factor = random.choice([0.2, 5.0])
+        #         data['consumption'] *= anomaly_factor
+        #         actual_anomaly = True
+        #     return pd.DataFrame([data]), actual_anomaly
 
-        def predict_anomaly(data):
-            consumption = data['consumption'].values[0]
-            return 1 if consumption < 30 or consumption > 200 else 0
+        # def predict_anomaly(data):
+        #     consumption = data['consumption'].values[0]
+        #     return 1 if consumption < 30 or consumption > 200 else 0
 
-        tab1, tab2 = st.tabs(["Monitor", "How It Works"])
-        with tab1:
-            st.write("### 🌊 Simulated Real-Time Anomaly Detection")
-            interval = st.slider("Refresh interval (seconds)", min_value=1, max_value=10, value=2)
-            seed = st.number_input("Random Seed", min_value=0, max_value=100, value=4)
-            dummy_run = st.button("Run Simulation")
-            if dummy_run:
-                for i in range(10):
-                    new_data, actual_anomaly = generate_dummy_data(seed)
-                    prediction = predict_anomaly(new_data)
-                    st.write(f"**Timestamp:** {new_data['timestamp'].values[0]}")
-                    st.write(f"**Water Consumption:** {new_data['consumption'].values[0]:.2f} units")
-                    st.write(f"**Prediction:** {'🌊 ANOMALY DETECTED!' if prediction == 1 else 'Normal consumption'}")
-                    if actual_anomaly and prediction == 1:
-                        st.success("✓ True Positive: Correctly identified anomaly")
-                    elif not actual_anomaly and prediction == 0:
-                        st.info("✓ True Negative: Correctly identified normal consumption")
-                    elif actual_anomaly and prediction == 0:
-                        st.error("✗ False Negative: Missed anomaly")
-                    else:
-                        st.warning("✗ False Positive: False alarm")
-                    time.sleep(interval)
-        with tab2:
-            st.write("""
-                _This tab simulates continuous water consumption monitoring, 
-                generating dummy data with occasional anomalies and evaluating prediction accuracy. 
-                The anomaly logic is threshold-based for demonstration; 
-                integrate your model for production scenarios._
-            """)
-        st.markdown('</div>', unsafe_allow_html=True)
+        # tab1, tab2 = st.tabs(["Monitor", "How It Works"])
+        # with tab1:
+        #     st.write("### 🌊 Simulated Real-Time Anomaly Detection")
+        #     interval = st.slider("Refresh interval (seconds)", min_value=1, max_value=10, value=2)
+        #     seed = st.number_input("Random Seed", min_value=0, max_value=100, value=4)
+        #     dummy_run = st.button("Run Simulation")
+        #     if dummy_run:
+        #         for i in range(10):
+        #             new_data, actual_anomaly = generate_dummy_data(seed)
+        #             prediction = predict_anomaly(new_data)
+        #             st.write(f"**Timestamp:** {new_data['timestamp'].values[0]}")
+        #             st.write(f"**Water Consumption:** {new_data['consumption'].values[0]:.2f} units")
+        #             st.write(f"**Prediction:** {'🌊 ANOMALY DETECTED!' if prediction == 1 else 'Normal consumption'}")
+        #             if actual_anomaly and prediction == 1:
+        #                 st.success("✓ True Positive: Correctly identified anomaly")
+        #             elif not actual_anomaly and prediction == 0:
+        #                 st.info("✓ True Negative: Correctly identified normal consumption")
+        #             elif actual_anomaly and prediction == 0:
+        #                 st.error("✗ False Negative: Missed anomaly")
+        #             else:
+        #                 st.warning("✗ False Positive: False alarm")
+        #             time.sleep(interval)
+        # with tab2:
+        #     st.write("""
+        #         _This tab simulates continuous water consumption monitoring, 
+        #         generating dummy data with occasional anomalies and evaluating prediction accuracy. 
+        #         The anomaly logic is threshold-based for demonstration; 
+        #         integrate your model for production scenarios._
+        #     """)
+        # st.markdown('</div>', unsafe_allow_html=True)
+        # --- LIVE "NEW DATA" PREDICTION FORM ---
+st.markdown('<div class="block-container">', unsafe_allow_html=True)
+st.header("💧 Live Water Consumption Prediction")
+
+with st.form("live_predict"):
+    st.markdown("Enter new observation details below:")
+    region = st.selectbox("Region", sorted(df_cleaned['region'].unique()))
+    date = st.date_input("Date")
+    # If you use other features (e.g., temperature), add more widgets here
+    submit = st.form_submit_button("Predict")
+
+if submit:
+    input_df = pd.DataFrame([{
+        "region": region,
+        "date": date,
+        # Add your other fields here
+    }])
+    input_df['date'] = pd.to_datetime(input_df['date'])
+    input_df['date_ordinal'] = input_df['date'].map(pd.Timestamp.toordinal)
+    input_df = pd.get_dummies(input_df, columns=['region'])
+    # Ensure all train columns are present
+    for col in X.columns:
+        if col not in input_df.columns:
+            input_df[col] = 0
+    input_df = input_df[X.columns]  # correct order
+    y_pred_live = lr_model.predict(input_df)[0]
+    st.success(f"Predicted water consumption: {y_pred_live:.2f} liters")
+st.markdown('</div>', unsafe_allow_html=True)
+
 
 else:
     st.info("Please upload your water consumption data (CSV) to get started 💧")
